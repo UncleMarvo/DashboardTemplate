@@ -493,8 +493,10 @@
 
     
     <script>
-      // --- API base injected from n8n through dashboardData (no workflow changes needed) ---
-      const API_BASE = (typeof dashboardData !== 'undefined' && dashboardData.api_base_url) ? dashboardData.api_base_url : '';
+      // --- Compute API base ---
+      const API_BASE = (typeof dashboardData !== 'undefined' && dashboardData.api_base_url)
+        ? dashboardData.api_base_url.replace(/\/+$/, '')
+        : (location.origin + '/webhook');
 
       // --- General state ---
       let currentPage = 1;
@@ -509,6 +511,7 @@
       async function httpGetJson(path, params = {}) {
         const qs = new URLSearchParams(params);
         const url = `${API_BASE}${path}${qs.toString() ? `?${qs}` : ''}`;
+        console.log('[HTTP] GET', url);
         const res = await fetch(url, { method: 'GET', headers: {}, cache: 'no-cache' });
         if (!res.ok) {
           const text = await res.text().catch(()=>''); 
@@ -517,135 +520,137 @@
         return res.json();
       }
 
-      // ---- API wrappers (keep existing API response shapes)
+      // ---- API wrappers (list + single)
       async function fetchObservations(page = 1) {
-        const params = { page, limit: rowsPerPage };
+        const params = { page, pageSize: rowsPerPage };
         if (currentFilter && currentFilter !== 'all') params.filter = currentFilter;
         if (currentSearch && currentSearch.length >= 3) params.search = currentSearch;
         const out = await httpGetJson('/api/observations', params);
-        // API returns { data: [...] , nextPage?, total? }
-        return out;
+        // Support either {items} or {data}
+        const items = Array.isArray(out.items) ? out.items : (Array.isArray(out.data) ? out.data : []);
+        return { items, total: out.total, nextPage: out.nextPage };
       }
 
       async function fetchObservation(id) {
-        return httpGetJson(`/api/observation/${encodeURIComponent(id)}`);
+        // NOTE: path uses plural as per your workflow: /api/observations/:id
+        return httpGetJson(`/api/observations/${encodeURIComponent(id)}`);
       }
 
       // Initialize dashboard
       function initDashboard() {
-        updateSummaryCards();
-        initCharts();
+        try {
+          updateSummaryCards();
+          initCharts();
+        } catch (e) {
+          console.warn('Charts/summary init failed (missing dashboardData?)', e);
+        }
         // Load first page from API so table stays in sync with server paging/filtering
         loadPage(1);
       }
 
-      // Update summary cards using injected dashboardData
+      // Update summary cards using injected dashboardData (if present)
       function updateSummaryCards() {
+        if (!window.dashboardData || !dashboardData.summary) return;
         const summary = dashboardData.summary;
-        document.getElementById('totalObs').textContent = summary.total;
-        document.getElementById('billablePercent').textContent = summary.billablePercent + '%';
-        document.getElementById('billableCount').textContent = summary.billable + ' observations';
-        document.getElementById('safetyCount').textContent = summary.safety;
-        document.getElementById('openCount').textContent = summary.open;
+        const safe = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
+        safe('totalObs', summary.total ?? '');
+        safe('billablePercent', (summary.billablePercent ?? '') + '%');
+        safe('billableCount', (summary.billable ?? '') + ' observations');
+        safe('safetyCount', summary.safety ?? '');
+        safe('openCount', summary.open ?? '');
       }
 
-      // Initialize charts using injected dashboardData
+      // Initialize charts using injected dashboardData (if present)
       function initCharts() {
-        const projects = dashboardData.byProject;
-
-        const ctx1 = document.getElementById('projectChart').getContext('2d');
-        projectChart = new Chart(ctx1, {
-          type: 'bar',
-          data: {
-            labels: projects.map(p => p.name),
-            datasets: [{
-              label: 'Observations',
-              data: projects.map(p => p.total),
-              backgroundColor: '#3498db',
-              borderColor: '#2980b9',
-              borderWidth: 1
-            }]
-          },
-          options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            onClick: (event, elements) => {
-              if (elements.length > 0) {
-                const index = elements[0].index;
-                filterByProject(projects[index].name);
+        if (!window.dashboardData) return;
+        const projects = dashboardData.byProject || [];
+        if (projects.length && window.Chart) {
+          const ctx1 = document.getElementById('projectChart')?.getContext('2d');
+          if (ctx1) {
+            projectChart = new Chart(ctx1, {
+              type: 'bar',
+              data: {
+                labels: projects.map(p => p.name),
+                datasets: [{
+                  label: 'Observations',
+                  data: projects.map(p => p.total),
+                }]
+              },
+              options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                onClick: (event, elements) => {
+                  if (elements.length > 0) {
+                    const index = elements[0].index;
+                    filterByProject(projects[index].name);
+                  }
+                },
+                scales: { y: { beginAtZero: true } }
               }
+            });
+          }
+        }
+
+        const billableCount = dashboardData?.summary?.billable ?? 0;
+        const total = dashboardData?.summary?.total ?? 0;
+        const nonBillableCount = Math.max(0, total - billableCount);
+
+        const ctx2 = document.getElementById('billableChart')?.getContext('2d');
+        if (ctx2 && window.Chart) {
+          billableChart = new Chart(ctx2, {
+            type: 'pie',
+            data: { labels: ['Billable', 'Non-Billable'], datasets: [{ data: [billableCount, nonBillableCount] }] },
+            options: {
+              responsive: true,
+              maintainAspectRatio: false,
+              onClick: (event, elements) => {
+                if (elements.length > 0) setFilter(elements[0].index === 0 ? 'billable' : 'all');
+              }
+            }
+          });
+        }
+
+        const ctx3 = document.getElementById('safetyChart')?.getContext('2d');
+        if (ctx3 && window.Chart) {
+          const safetyLevels = { None: 0, Low: 0, Medium: 0, High: 0 };
+          (dashboardData.observations || []).forEach(o => {
+            const level = (o.safety_risk_level || 'None');
+            safetyLevels[level] = (safetyLevels[level] ?? 0) + 1;
+          });
+          safetyChart = new Chart(ctx3, {
+            type: 'doughnut',
+            data: {
+              labels: Object.keys(safetyLevels),
+              datasets: [{ data: Object.values(safetyLevels) }]
             },
-            scales: { y: { beginAtZero: true } }
-          }
-        });
-
-        const ctx2 = document.getElementById('billableChart').getContext('2d');
-        const billableCount = dashboardData.summary.billable;
-        const nonBillableCount = dashboardData.summary.total - billableCount;
-        billableChart = new Chart(ctx2, {
-          type: 'pie',
-          data: {
-            labels: ['Billable', 'Non-Billable'],
-            datasets: [{
-              data: [billableCount, nonBillableCount],
-              backgroundColor: ['#27ae60', '#95a5a6'],
-              borderWidth: 2
-            }]
-          },
-          options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            onClick: (event, elements) => {
-              if (elements.length > 0) {
-                setFilter(elements[0].index === 0 ? 'billable' : 'all');
+            options: {
+              responsive: true,
+              maintainAspectRatio: false,
+              onClick: (event, elements) => {
+                if (elements.length > 0 && elements[0].index > 0) setFilter('safety');
               }
             }
-          }
-        });
-
-        const ctx3 = document.getElementById('safetyChart').getContext('2d');
-        const safetyLevels = { None: 0, Low: 0, Medium: 0, High: 0 };
-        dashboardData.observations.forEach(obs => {
-          const level = (obs.safety_risk_level || 'None');
-          safetyLevels[level] = (safetyLevels[level] ?? 0) + 1;
-        });
-        safetyChart = new Chart(ctx3, {
-          type: 'doughnut',
-          data: {
-            labels: Object.keys(safetyLevels),
-            datasets: [{
-              data: Object.values(safetyLevels),
-              backgroundColor: ['#95a5a6', '#f1c40f', '#f39c12', '#e74c3c'],
-              borderWidth: 2
-            }]
-          },
-          options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            onClick: (event, elements) => {
-              if (elements.length > 0 && elements[0].index > 0) {
-                setFilter('safety');
-              }
-            }
-          }
-        });
+          });
+        }
       }
 
       // Centralized render for table
       function renderTable(items) {
         const tbody = document.getElementById('tableBody');
+        if (!tbody) return;
         const rows = (items || []).map(obs => {
           const safety = (obs.safety_risk_level || 'none').toLowerCase();
           const status = (obs.status || '').toLowerCase();
+          const id = obs.id ?? obs.ID ?? obs.observationId ?? '';
           return `
-            <tr onclick="openModal(${obs.id})">
+            <tr onclick="openModal('${id}')">
               <td>${obs.project_name ?? ''}</td>
               <td>${obs.name ?? ''}</td>
               <td><span class="status-badge status-${status}">${obs.status ?? ''}</span></td>
               <td class="${obs.is_chargeable ? 'billable-yes' : 'billable-no'}">${obs.is_chargeable ? 'Yes' : 'No'}</td>
               <td class="safety-${safety}">${obs.safety_risk_level ?? ''}</td>
               <td>${obs.recommendation_priority || 'N/A'}</td>
-              <td><button onclick="event.stopPropagation(); openModal(${obs.id})" style="padding: 5px 12px; border: none; background: #3498db; color: white; border-radius: 4px; cursor: pointer; font-size: 12px;">View</button></td>
+              <td><button onclick="event.stopPropagation(); openModal('${id}')" class="btn-view">View</button></td>
             </tr>
           `;
         }).join('');
@@ -654,28 +659,51 @@
 
       // Update pagination info
       function updatePagination(totalCount, page) {
-        const totalPages = totalCount ? Math.max(1, Math.ceil(totalCount / rowsPerPage)) : (page || 1);
-        document.getElementById('pageInfo').textContent = `Page ${page} of ${totalPages}${totalCount ? ` (${totalCount} observations)` : ''}`;
-        document.getElementById('prevBtn').disabled = page <= 1;
-        // If server doesn't return total, keep Next enabled unless empty page
-        document.getElementById('nextBtn').disabled = false;
+        const info = document.getElementById('pageInfo');
+        const prev = document.getElementById('prevBtn');
+        const next = document.getElementById('nextBtn');
+        if (info) {
+          const totalPages = totalCount ? Math.max(1, Math.ceil(totalCount / rowsPerPage)) : (page || 1);
+          info.textContent = `Page ${page} of ${totalPages}${totalCount ? ` (${totalCount} observations)` : ''}`;
+        }
+        if (prev) prev.disabled = page <= 1;
+        if (next) next.disabled = false;
       }
 
-      // Load a page via API
+      // Load a page via API with fallback to injected data
       async function loadPage(page) {
         showLoading();
         try {
-          const { data, total, nextPage } = await fetchObservations(page);
-          renderTable(data || []);
-          currentPage = page;
-          updatePagination(total, page);
-          // Disable Next if API signals no more pages
-          if (Array.isArray(data) && data.length < rowsPerPage && !nextPage && !total) {
-            document.getElementById('nextBtn').disabled = true;
+          const { items, total, nextPage } = await fetchObservations(page);
+          if (Array.isArray(items) && items.length) {
+            renderTable(items);
+            currentPage = page;
+            updatePagination(total, page);
+            if (document.getElementById('nextBtn') && !nextPage && !total && items.length < rowsPerPage) {
+              document.getElementById('nextBtn').disabled = true;
+            }
+            return;
+          }
+          // fallback: use injected dashboardData if API empty
+          if (window.dashboardData && Array.isArray(dashboardData.observations)) {
+            const start = (page - 1) * rowsPerPage;
+            const slice = dashboardData.observations.slice(start, start + rowsPerPage);
+            renderTable(slice);
+            currentPage = page;
+            updatePagination(dashboardData.observations.length, page);
           }
         } catch (err) {
           console.error('Load page error:', err);
-          alert('Error loading data.');
+          // fallback to injected data
+          if (window.dashboardData && Array.isArray(dashboardData.observations)) {
+            const start = (page - 1) * rowsPerPage;
+            const slice = dashboardData.observations.slice(start, start + rowsPerPage);
+            renderTable(slice);
+            currentPage = page;
+            updatePagination(dashboardData.observations.length, page);
+          } else {
+            alert('Error loading data and no fallback available.');
+          }
         } finally {
           hideLoading();
         }
@@ -691,7 +719,6 @@
       function setFilter(filter) {
         currentFilter = filter;
         currentPage = 1;
-        // Toggle active button styling without relying on event.target
         const btns = document.querySelectorAll('.filter-btn');
         btns.forEach(btn => {
           const text = btn.textContent.trim().toLowerCase();
@@ -708,13 +735,16 @@
         currentPage = 1;
         showLoading();
         try {
-          const { data } = await httpGetJson('/api/observations', { project: projectName, page: 1, limit: rowsPerPage });
-          renderTable(data || []);
-          updatePagination((data || []).length, 1);
+          const out = await httpGetJson('/api/observations', { project: projectName, page: 1, pageSize: rowsPerPage });
+          const items = Array.isArray(out.items) ? out.items : (Array.isArray(out.data) ? out.data : []);
+          renderTable(items);
+          updatePagination(items.length, 1);
         } catch (e) {
           console.error('filterByProject error', e);
-          renderTable((dashboardData.observations || []).filter(o => o.project_name === projectName));
-          updatePagination(null, 1);
+          // fallback to injected data
+          const all = (dashboardData.observations || []).filter(o => o.project_name === projectName);
+          renderTable(all);
+          updatePagination(all.length, 1);
         } finally { hideLoading(); }
       }
 
@@ -723,7 +753,7 @@
         const input = document.querySelector('.search-box');
         currentSearch = (input?.value || '').toLowerCase();
         if (!currentSearch) { setFilter(currentFilter); return; }
-        if (currentSearch.length < 3) return; // debounce small terms
+        if (currentSearch.length < 3) return;
         loadPage(1);
       }
 
@@ -731,16 +761,15 @@
       function sortTable(column) {
         if (sortColumn === column) sortDirection = (sortDirection === 'asc' ? 'desc' : 'asc');
         else { sortColumn = column; sortDirection = 'asc'; }
-        // Re-fetch current page and sort client-side for display
-        fetchObservations(currentPage).then(({ data }) => {
-          const items = (data || []).slice();
-          items.sort((a,b) => {
+        fetchObservations(currentPage).then(({ items }) => {
+          const data = (items || []).slice();
+          data.sort((a,b) => {
             let av = a[column], bv = b[column];
             if (typeof av === 'boolean') { av = av ? 1 : 0; bv = bv ? 1 : 0; }
             if (typeof av === 'string') { av = av.toLowerCase(); bv = bv.toLowerCase(); }
             return (sortDirection === 'asc') ? (av > bv ? 1 : -1) : (av < bv ? 1 : -1);
           });
-          renderTable(items);
+          renderTable(data);
         }).catch(()=>{});
       }
 
@@ -765,34 +794,12 @@
               <p>${obs.description ?? 'No description available'}</p>
             </div>
             <div class="modal-section">
-              <h3>Chargeability Analysis</h3>
-              <p><strong>Billable:</strong> ${(obs.chargeability?.is_chargeable ? 'Yes' : 'No')}</p>
-              <p><strong>Confidence:</strong> ${obs.chargeability?.confidence ?? 'N/A'}</p>
-              <p><strong>Reason:</strong> ${obs.chargeability?.reason ?? 'N/A'}</p>
-              <p><strong>Category:</strong> ${obs.chargeability?.category ?? 'N/A'}</p>
+              <h3>Chargeability</h3>
+              <p><strong>Billable:</strong> ${(obs.is_chargeable ? 'Yes' : 'No')}</p>
             </div>
             <div class="modal-section">
-              <h3>Safety Information</h3>
-              <p><strong>Safety Concern:</strong> ${(obs.safety?.is_safety_concern ? 'Yes' : 'No')}</p>
-              <p><strong>Risk Level:</strong> <span class="safety-${(obs.safety?.risk_level ?? 'none').toLowerCase()}">${obs.safety?.risk_level ?? 'N/A'}</span></p>
-              <p><strong>Concern Type:</strong> ${obs.safety?.concern_type ?? 'N/A'}</p>
-              <p><strong>Description:</strong> ${obs.safety?.description ?? 'No safety concerns'}</p>
-              <p><strong>Immediate Action Required:</strong> ${(obs.safety?.immediate_action_required ? 'Yes' : 'No')}</p>
-            </div>
-            <div class="modal-section">
-              <h3>Recommendations</h3>
-              <p><strong>Priority:</strong> ${obs.recommendations?.priority ?? 'N/A'}</p>
-              <p><strong>Estimated Time:</strong> ${obs.recommendations?.estimated_time ?? 'N/A'}</p>
-              <p><strong>Requires Approval:</strong> ${(obs.recommendations?.requires_approval ? 'Yes' : 'No')}</p>
-              ${Array.isArray(obs.recommendations?.actions) && obs.recommendations.actions.length ? `
-                <p><strong>Actions:</strong></p>
-                <ul>${obs.recommendations.actions.map(a => `<li>${a}</li>`).join('')}</ul>` : ''}
-            </div>
-            <div class="modal-section">
-              <h3>Classification</h3>
-              <p><strong>Type:</strong> ${obs.classification?.primary_type ?? 'N/A'}</p>
-              <p><strong>Tags:</strong> ${Array.isArray(obs.classification?.tags) && obs.classification.tags.length ? obs.classification.tags.join(', ') : 'None'}</p>
-              <p><strong>Requires Documentation:</strong> ${(obs.classification?.requires_documentation ? 'Yes' : 'No')}</p>
+              <h3>Safety</h3>
+              <p><strong>Risk Level:</strong> <span class="safety-${(obs.safety_risk_level ?? 'none').toLowerCase()}">${obs.safety_risk_level ?? 'N/A'}</span></p>
             </div>
           `;
           document.getElementById('observationModal').style.display = 'block';
@@ -804,14 +811,14 @@
         }
       }
 
-      function closeModal() { document.getElementById('observationModal').style.display = 'none'; }
+      function closeModal() { const m = document.getElementById('observationModal'); if (m) m.style.display = 'none'; }
       window.onclick = function(ev) {
         const modal = document.getElementById('observationModal');
         if (ev.target === modal) closeModal();
       };
 
-      function showLoading(){ document.getElementById('loadingOverlay').style.display = 'block'; }
-      function hideLoading(){ document.getElementById('loadingOverlay').style.display = 'none'; }
+      function showLoading(){ const el = document.getElementById('loadingOverlay'); if (el) el.style.display = 'block'; }
+      function hideLoading(){ const el = document.getElementById('loadingOverlay'); if (el) el.style.display = 'none'; }
 
       document.addEventListener('DOMContentLoaded', initDashboard);
     </script>
