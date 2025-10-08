@@ -536,8 +536,7 @@
       }
 
       async function fetchObservation(id) {
-        // NOTE: path uses plural as per your workflow: /api/observations/:id
-        return httpGetJson(`/api/observations/${encodeURIComponent(id)}`);
+        return httpGetJson(`/api-observation-single/api/observation/${encodeURIComponent(id)}`);
       }
 
       // Initialize dashboard
