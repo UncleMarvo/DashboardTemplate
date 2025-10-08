@@ -397,6 +397,7 @@
       .modal-badge.status {
         background: #3498db;
         color: white;
+        margin-left: 10px;
       }
       .modal-badge.billable-yes {
         background: #28a745;
@@ -893,16 +894,12 @@
           if (obs && obs.error) { alert('Observation not found'); return; }
           document.getElementById('modalTitle').textContent = obs.name ?? 'Observation Details';
           document.getElementById('modalBody').innerHTML = `
-            <!-- Status Badge at Top -->
-            <div style="margin-bottom: 20px;">
-              <span class="modal-badge status">${obs.status ?? 'N/A'}</span>
-            </div>
-
             <!-- Basic Information Grid -->
             <div class="modal-section">
               <div class="modal-section-header">
                 <span class="modal-section-icon">📋</span>
                 <h3 style="margin: 0;">Basic Information</h3>
+                <span class="modal-badge status">${obs.status ?? 'N/A'}</span>
               </div>
               <div class="modal-description-box">
                 <div class="modal-info-item">
