@@ -494,9 +494,10 @@
     
     <script>
       // --- Compute API base ---
-      const API_BASE = (typeof dashboardData !== 'undefined' && dashboardData.api_base_url)
-        ? dashboardData.api_base_url.replace(/\/+$/, '')
-        : (location.origin + '/webhook');
+      // const API_BASE = (typeof dashboardData !== 'undefined' && dashboardData.api_base_url)
+      //   ? dashboardData.api_base_url.replace(/\/+$/, '')
+      //   : (location.origin + '/webhook');
+      const API_BASE = '/webhook';
 
       // --- General state ---
       let currentPage = 1;
