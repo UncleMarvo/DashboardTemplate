@@ -1,0 +1,903 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>PROCORE Observations Dashboard</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Arial,
+          sans-serif;
+        background: #f5f7fa;
+        color: #333;
+      }
+      .container {
+        max-width: 1400px;
+        margin: 0 auto;
+        padding: 20px;
+      }
+      .header {
+        text-align: center;
+        margin-bottom: 30px;
+      }
+      .header h1 {
+        font-size: 2.5rem;
+        color: #2c3e50;
+        margin-bottom: 5px;
+      }
+      .header p {
+        color: #7f8c8d;
+        font-size: 1.1rem;
+      }
+
+      .summary-cards {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+        gap: 20px;
+        margin-bottom: 30px;
+      }
+      .card {
+        background: white;
+        padding: 25px;
+        border-radius: 12px;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+        cursor: pointer;
+        transition: all 0.3s;
+        border-left: 4px solid #3498db;
+      }
+      .card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+      }
+      .card.billable {
+        border-left-color: #27ae60;
+      }
+      .card.safety {
+        border-left-color: #e74c3c;
+      }
+      .card.open {
+        border-left-color: #f39c12;
+      }
+      .card h3 {
+        font-size: 0.9rem;
+        text-transform: uppercase;
+        color: #7f8c8d;
+        margin-bottom: 10px;
+        font-weight: 600;
+      }
+      .card .value {
+        font-size: 2.5rem;
+        font-weight: bold;
+        color: #2c3e50;
+      }
+      .card .subtitle {
+        font-size: 0.85rem;
+        color: #95a5a6;
+        margin-top: 5px;
+      }
+
+      .charts-section {
+        display: grid;
+        grid-template-columns: 2fr 1fr 1fr;
+        gap: 20px;
+        margin-bottom: 30px;
+      }
+      .chart-container {
+        background: white;
+        padding: 20px;
+        border-radius: 12px;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+        height: 400px;
+        position: relative;
+      }
+      .chart-container h3 {
+        margin-bottom: 15px;
+        color: #2c3e50;
+        font-size: 1.1rem;
+      }
+      .chart-container canvas {
+        max-height: 340px !important;
+      }
+
+      .controls-section {
+        background: white;
+        padding: 20px;
+        border-radius: 12px;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+        margin-bottom: 20px;
+      }
+      .controls {
+        display: flex;
+        gap: 10px;
+        flex-wrap: wrap;
+        align-items: center;
+      }
+      .search-box {
+        flex: 1;
+        min-width: 250px;
+        padding: 10px 15px;
+        border: 1px solid #ddd;
+        border-radius: 6px;
+        font-size: 14px;
+      }
+      .filter-btn {
+        padding: 10px 20px;
+        border: none;
+        background: #ecf0f1;
+        color: #2c3e50;
+        border-radius: 6px;
+        cursor: pointer;
+        font-weight: 500;
+        transition: all 0.2s;
+      }
+      .filter-btn:hover {
+        background: #bdc3c7;
+      }
+      .filter-btn.active {
+        background: #3498db;
+        color: white;
+      }
+
+      .table-section {
+        background: white;
+        border-radius: 12px;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+        overflow: hidden;
+      }
+      .table-container {
+        overflow-x: auto;
+        max-height: 600px;
+      }
+      .table {
+        width: 100%;
+        border-collapse: collapse;
+      }
+      .table th,
+      .table td {
+        padding: 14px;
+        text-align: left;
+        border-bottom: 1px solid #ecf0f1;
+      }
+      .table th {
+        background: #f8f9fa;
+        font-weight: 600;
+        color: #2c3e50;
+        position: sticky;
+        top: 0;
+        cursor: pointer;
+        user-select: none;
+      }
+      .table th:hover {
+        background: #e9ecef;
+      }
+      .table tbody tr {
+        cursor: pointer;
+        transition: background 0.2s;
+      }
+      .table tbody tr:hover {
+        background: #f8f9fa;
+      }
+      .billable-yes {
+        color: #27ae60;
+        font-weight: 600;
+      }
+      .billable-no {
+        color: #95a5a6;
+      }
+      .safety-high {
+        color: #e74c3c;
+        font-weight: 600;
+      }
+      .safety-medium {
+        color: #f39c12;
+        font-weight: 600;
+      }
+      .safety-low {
+        color: #f1c40f;
+      }
+      .safety-none {
+        color: #95a5a6;
+      }
+      .status-badge {
+        padding: 4px 10px;
+        border-radius: 12px;
+        font-size: 12px;
+        font-weight: 500;
+      }
+      .status-open {
+        background: #fee;
+        color: #c0392b;
+      }
+      .status-closed {
+        background: #d4edda;
+        color: #155724;
+      }
+      .status-initiated {
+        background: #fff3cd;
+        color: #856404;
+      }
+
+      .pagination {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        gap: 10px;
+        padding: 20px;
+      }
+      .pagination button {
+        padding: 8px 14px;
+        border: 1px solid #ddd;
+        background: white;
+        cursor: pointer;
+        border-radius: 6px;
+        font-weight: 500;
+      }
+      .pagination button:hover:not(:disabled) {
+        background: #f8f9fa;
+      }
+      .pagination button:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+      }
+      .pagination button.active {
+        background: #3498db;
+        color: white;
+        border-color: #3498db;
+      }
+      .pagination .page-info {
+        color: #7f8c8d;
+        font-size: 14px;
+      }
+
+      .modal {
+        display: none;
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(0, 0, 0, 0.5);
+        z-index: 1000;
+      }
+      .modal-content {
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        background: white;
+        padding: 30px;
+        border-radius: 12px;
+        max-width: 800px;
+        width: 90%;
+        max-height: 85vh;
+        overflow-y: auto;
+        box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+      }
+      .modal-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 20px;
+        padding-bottom: 15px;
+        border-bottom: 2px solid #ecf0f1;
+      }
+      .modal-header h2 {
+        color: #2c3e50;
+        font-size: 1.5rem;
+      }
+      .close-btn {
+        background: none;
+        border: none;
+        font-size: 28px;
+        cursor: pointer;
+        color: #95a5a6;
+        line-height: 1;
+      }
+      .close-btn:hover {
+        color: #2c3e50;
+      }
+      .modal-section {
+        margin-bottom: 20px;
+      }
+      .modal-section h3 {
+        color: #34495e;
+        margin-bottom: 10px;
+        border-left: 4px solid #3498db;
+        padding-left: 12px;
+        font-size: 1.1rem;
+      }
+      .modal-section p {
+        margin-bottom: 8px;
+        line-height: 1.6;
+        color: #555;
+      }
+      .modal-section strong {
+        color: #2c3e50;
+      }
+      .modal-section ul {
+        margin-left: 20px;
+        list-style: disc;
+      }
+      .modal-section li {
+        margin-bottom: 6px;
+        line-height: 1.5;
+      }
+
+      .loading-overlay {
+        display: none;
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(255, 255, 255, 0.9);
+        z-index: 999;
+      }
+      .loading-spinner {
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        text-align: center;
+      }
+      .spinner {
+        border: 4px solid #f3f3f3;
+        border-top: 4px solid #3498db;
+        border-radius: 50%;
+        width: 50px;
+        height: 50px;
+        animation: spin 1s linear infinite;
+        margin: 0 auto 10px;
+      }
+      @keyframes spin {
+        0% {
+          transform: rotate(0deg);
+        }
+        100% {
+          transform: rotate(360deg);
+        }
+      }
+
+      @media (max-width: 768px) {
+        .charts-section {
+          grid-template-columns: 1fr;
+        }
+        .summary-cards {
+          grid-template-columns: repeat(2, 1fr);
+        }
+        .controls {
+          flex-direction: column;
+        }
+        .search-box {
+          width: 100%;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="loading-overlay" id="loadingOverlay">
+      <div class="loading-spinner">
+        <div class="spinner"></div>
+        <p>Loading data...</p>
+      </div>
+    </div>
+
+    <div class="container">
+      <div class="header">
+        <h1>PROCORE Observations Dashboard</h1>
+        <p>Project oversight and observation management</p>
+      </div>
+
+      <div class="summary-cards">
+        <div class="card" onclick="filterTable('all')">
+          <h3>Total Observations</h3>
+          <div class="value" id="totalObs">0</div>
+          <div class="subtitle">All observations</div>
+        </div>
+        <div class="card billable" onclick="filterTable('billable')">
+          <h3>Billable</h3>
+          <div class="value" id="billablePercent">0%</div>
+          <div class="subtitle" id="billableCount">0 observations</div>
+        </div>
+        <div class="card safety" onclick="filterTable('safety')">
+          <h3>Safety Issues</h3>
+          <div class="value" id="safetyCount">0</div>
+          <div class="subtitle">Observations with safety concerns</div>
+        </div>
+        <div class="card open" onclick="filterTable('open')">
+          <h3>Open</h3>
+          <div class="value" id="openCount">0</div>
+          <div class="subtitle">Active observations</div>
+        </div>
+      </div>
+
+      <div class="charts-section">
+        <div class="chart-container">
+          <h3>Top 15 Projects by Volume</h3>
+          <canvas id="projectChart"></canvas>
+        </div>
+        <div class="chart-container">
+          <h3>Billable Distribution</h3>
+          <canvas id="billableChart"></canvas>
+        </div>
+        <div class="chart-container">
+          <h3>Safety Risk Levels</h3>
+          <canvas id="safetyChart"></canvas>
+        </div>
+      </div>
+
+      <div class="controls-section">
+        <div class="controls">
+          <input
+            type="text"
+            class="search-box"
+            placeholder="Search observations..."
+            oninput="searchTable()"
+          />
+          <button class="filter-btn active" onclick="setFilter('all')">
+            All
+          </button>
+          <button class="filter-btn" onclick="setFilter('billable')">
+            Billable
+          </button>
+          <button class="filter-btn" onclick="setFilter('safety')">
+            Safety Issues
+          </button>
+          <button class="filter-btn" onclick="setFilter('open')">Open</button>
+          <button class="filter-btn" onclick="setFilter('priority')">
+            High Priority
+          </button>
+        </div>
+      </div>
+
+      <div class="table-section">
+        <div class="table-container">
+          <table class="table">
+            <thead>
+              <tr>
+                <th onclick="sortTable('project_name')">Project</th>
+                <th onclick="sortTable('name')">Name</th>
+                <th onclick="sortTable('status')">Status</th>
+                <th onclick="sortTable('is_chargeable')">Billable</th>
+                <th onclick="sortTable('safety_risk_level')">Safety Risk</th>
+                <th onclick="sortTable('recommendation_priority')">Priority</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="tableBody"></tbody>
+          </table>
+        </div>
+        <div class="pagination">
+          <button onclick="changePage(-1)" id="prevBtn">Previous</button>
+          <span class="page-info" id="pageInfo">Page 1 of 1</span>
+          <button onclick="changePage(1)" id="nextBtn">Next</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="modal" id="observationModal">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h2 id="modalTitle">Observation Details</h2>
+          <button class="close-btn" onclick="closeModal()">&times;</button>
+        </div>
+        <div id="modalBody"></div>
+      </div>
+    </div>
+
+    <script>
+      // CRITICAL: This placeholder will be replaced with actual data by n8n
+      const dashboardData = /*DASHBOARD_DATA*/;
+
+      // State management
+      let currentPage = 1;
+      const rowsPerPage = 25;
+      let filteredObservations = [];
+      let currentFilter = 'all';
+      let sortColumn = '';
+      let sortDirection = 'asc';
+      let projectChart, billableChart, safetyChart;
+
+      // Initialize dashboard
+      function initDashboard() {
+          updateSummaryCards();
+          initCharts();
+          filteredObservations = [...dashboardData.observations];
+          renderTable();
+      }
+
+      // Update summary cards
+      function updateSummaryCards() {
+          const summary = dashboardData.summary;
+          document.getElementById('totalObs').textContent = summary.total;
+          document.getElementById('billablePercent').textContent = summary.billablePercent + '%';
+          document.getElementById('billableCount').textContent = summary.billable + ' observations';
+          document.getElementById('safetyCount').textContent = summary.safety;
+          document.getElementById('openCount').textContent = summary.open;
+      }
+
+      // Initialize charts
+      function initCharts() {
+          const projects = dashboardData.byProject;
+
+          // Project volume bar chart
+          const ctx1 = document.getElementById('projectChart').getContext('2d');
+          projectChart = new Chart(ctx1, {
+              type: 'bar',
+              data: {
+                  labels: projects.map(p => p.name),
+                  datasets: [{
+                      label: 'Observations',
+                      data: projects.map(p => p.total),
+                      backgroundColor: '#3498db',
+                      borderColor: '#2980b9',
+                      borderWidth: 1
+                  }]
+              },
+              options: {
+                  responsive: true,
+                  maintainAspectRatio: false,
+                  onClick: (event, elements) => {
+                      if (elements.length > 0) {
+                          const index = elements[0].index;
+                          filterByProject(projects[index].name);
+                      }
+                  },
+                  scales: { y: { beginAtZero: true } }
+              }
+          });
+
+          // Billable pie chart
+          const ctx2 = document.getElementById('billableChart').getContext('2d');
+          const billableCount = dashboardData.summary.billable;
+          const nonBillableCount = dashboardData.summary.total - billableCount;
+          billableChart = new Chart(ctx2, {
+              type: 'pie',
+              data: {
+                  labels: ['Billable', 'Non-Billable'],
+                  datasets: [{
+                      data: [billableCount, nonBillableCount],
+                      backgroundColor: ['#27ae60', '#95a5a6'],
+                      borderWidth: 2
+                  }]
+              },
+              options: {
+                  responsive: true,
+                  maintainAspectRatio: false,
+                  onClick: (event, elements) => {
+                      if (elements.length > 0) {
+                          setFilter(elements[0].index === 0 ? 'billable' : 'all');
+                      }
+                  }
+              }
+          });
+
+          // Safety donut chart
+          const ctx3 = document.getElementById('safetyChart').getContext('2d');
+          const safetyLevels = { None: 0, Low: 0, Medium: 0, High: 0 };
+          dashboardData.observations.forEach(obs => {
+              safetyLevels[obs.safety_risk_level || 'None']++;
+          });
+          safetyChart = new Chart(ctx3, {
+              type: 'doughnut',
+              data: {
+                  labels: Object.keys(safetyLevels),
+                  datasets: [{
+                      data: Object.values(safetyLevels),
+                      backgroundColor: ['#95a5a6', '#f1c40f', '#f39c12', '#e74c3c'],
+                      borderWidth: 2
+                  }]
+              },
+              options: {
+                  responsive: true,
+                  maintainAspectRatio: false,
+                  onClick: (event, elements) => {
+                      if (elements.length > 0 && elements[0].index > 0) {
+                          setFilter('safety');
+                      }
+                  }
+              }
+          });
+      }
+
+      // Render table
+      function renderTable() {
+          const tbody = document.getElementById('tableBody');
+          const startIndex = (currentPage - 1) * rowsPerPage;
+          const endIndex = startIndex + rowsPerPage;
+          const pageData = filteredObservations.slice(startIndex, endIndex);
+
+          tbody.innerHTML = pageData.map(obs => `
+              <tr onclick="openModal(${obs.id})">
+                  <td>${obs.project_name}</td>
+                  <td>${obs.name}</td>
+                  <td><span class="status-badge status-${obs.status.toLowerCase()}">${obs.status}</span></td>
+                  <td class="${obs.is_chargeable ? 'billable-yes' : 'billable-no'}">${obs.is_chargeable ? 'Yes' : 'No'}</td>
+                  <td class="safety-${obs.safety_risk_level.toLowerCase()}">${obs.safety_risk_level}</td>
+                  <td>${obs.recommendation_priority || 'N/A'}</td>
+                  <td><button onclick="event.stopPropagation(); openModal(${obs.id})" style="padding: 5px 12px; border: none; background: #3498db; color: white; border-radius: 4px; cursor: pointer; font-size: 12px;">View</button></td>
+              </tr>
+          `).join('');
+
+          updatePagination();
+      }
+
+      // Update pagination
+      function updatePagination() {
+          const totalPages = Math.ceil(filteredObservations.length / rowsPerPage);
+          document.getElementById('pageInfo').textContent = `Page ${currentPage} of ${totalPages} (${filteredObservations.length} observations)`;
+          document.getElementById('prevBtn').disabled = currentPage === 1;
+          document.getElementById('nextBtn').disabled = currentPage === totalPages;
+      }
+
+      // Change page
+      function changePage(direction) {
+          const totalPages = Math.ceil(filteredObservations.length / rowsPerPage);
+          const newPage = currentPage + direction;
+
+          if (newPage >= 1 && newPage <= totalPages) {
+              if (newPage > 2) {
+                  loadPageFromAPI(newPage);
+              } else {
+                  currentPage = newPage;
+                  renderTable();
+              }
+          }
+      }
+
+      // Load page from API
+      async function loadPageFromAPI(page) {
+          showLoading();
+          try {
+              const response = await fetch(`${dashboardData.api_base_url}/api/observations?page=${page}&limit=${rowsPerPage}&filter=${currentFilter}`);
+              const data = await response.json();
+
+              filteredObservations = data.data;
+              currentPage = page;
+              renderTable();
+          } catch (error) {
+              console.error('Error loading page:', error);
+              alert('Error loading data. Please try again.');
+          } finally {
+              hideLoading();
+          }
+      }
+
+      // Filter table
+      function filterTable(type) {
+          setFilter(type);
+      }
+
+      // Set filter
+      function setFilter(filter) {
+          currentFilter = filter;
+          currentPage = 1;
+
+          document.querySelectorAll('.filter-btn').forEach(btn => btn.classList.remove('active'));
+          event.target.classList.add('active');
+
+          if (filter === 'all') {
+              filteredObservations = [...dashboardData.observations];
+              renderTable();
+          } else {
+              loadFilteredData();
+          }
+      }
+
+      // Load filtered data from API
+      async function loadFilteredData() {
+          showLoading();
+          try {
+              const response = await fetch(`${dashboardData.api_base_url}/api/observations?filter=${currentFilter}&page=1&limit=${rowsPerPage}`);
+              const data = await response.json();
+
+              filteredObservations = data.data;
+              currentPage = 1;
+              renderTable();
+          } catch (error) {
+              console.error('Error filtering:', error);
+              filteredObservations = dashboardData.observations.filter(obs => {
+                  if (currentFilter === 'billable') return obs.is_chargeable;
+                  if (currentFilter === 'safety') return obs.is_safety_concern;
+                  if (currentFilter === 'open') return obs.status === 'open' || obs.status === 'initiated';
+                  if (currentFilter === 'priority') return obs.recommendation_priority === 'High';
+                  return true;
+              });
+              renderTable();
+          } finally {
+              hideLoading();
+          }
+      }
+
+      // Filter by project
+      async function filterByProject(projectName) {
+          currentFilter = 'project';
+          currentPage = 1;
+          showLoading();
+
+          try {
+              const response = await fetch(`${dashboardData.api_base_url}/api/observations?project=${encodeURIComponent(projectName)}&page=1&limit=${rowsPerPage}`);
+              const data = await response.json();
+
+              filteredObservations = data.data;
+              renderTable();
+          } catch (error) {
+              console.error('Error filtering by project:', error);
+              filteredObservations = dashboardData.observations.filter(obs => obs.project_name === projectName);
+              renderTable();
+          } finally {
+              hideLoading();
+          }
+      }
+
+      // Search table
+      async function searchTable() {
+          const searchTerm = event.target.value.toLowerCase();
+
+          if (searchTerm.length === 0) {
+              filteredObservations = [...dashboardData.observations];
+              currentPage = 1;
+              renderTable();
+              return;
+          }
+
+          if (searchTerm.length < 3) return;
+
+          showLoading();
+          try {
+              const response = await fetch(`${dashboardData.api_base_url}/api/observations?search=${encodeURIComponent(searchTerm)}&page=1&limit=${rowsPerPage}`);
+              const data = await response.json();
+
+              filteredObservations = data.data;
+              currentPage = 1;
+              renderTable();
+          } catch (error) {
+              console.error('Error searching:', error);
+              filteredObservations = dashboardData.observations.filter(obs =>
+                  obs.name.toLowerCase().includes(searchTerm) ||
+                  obs.project_name.toLowerCase().includes(searchTerm) ||
+                  obs.status.toLowerCase().includes(searchTerm)
+              );
+              currentPage = 1;
+              renderTable();
+          } finally {
+              hideLoading();
+          }
+      }
+
+      // Sort table
+      function sortTable(column) {
+          if (sortColumn === column) {
+              sortDirection = sortDirection === 'asc' ? 'desc' : 'asc';
+          } else {
+              sortColumn = column;
+              sortDirection = 'asc';
+          }
+
+          filteredObservations.sort((a, b) => {
+              let aVal = a[column];
+              let bVal = b[column];
+
+              if (typeof aVal === 'boolean') {
+                  aVal = aVal ? 1 : 0;
+                  bVal = bVal ? 1 : 0;
+              }
+              if (typeof aVal === 'string') {
+                  aVal = aVal.toLowerCase();
+                  bVal = bVal.toLowerCase();
+              }
+
+              if (sortDirection === 'asc') {
+                  return aVal > bVal ? 1 : -1;
+              } else {
+                  return aVal < bVal ? 1 : -1;
+              }
+          });
+
+          renderTable();
+      }
+
+      // Open modal
+      async function openModal(obsId) {
+          showLoading();
+
+          try {
+              const response = await fetch(`${dashboardData.api_base_url}/api/observation/${obsId}`);
+              const obs = await response.json();
+
+              if (obs.error) {
+                  alert('Observation not found');
+                  return;
+              }
+
+              document.getElementById('modalTitle').textContent = obs.name;
+              document.getElementById('modalBody').innerHTML = `
+                  <div class="modal-section">
+                      <h3>Basic Information</h3>
+                      <p><strong>Project:</strong> ${obs.project_name} (${obs.project_number || 'N/A'})</p>
+                      <p><strong>Location:</strong> ${obs.location || 'N/A'}</p>
+                      <p><strong>Status:</strong> ${obs.status}</p>
+                      <p><strong>Created:</strong> ${new Date(obs.created_at).toLocaleDateString()}</p>
+                      <p><strong>Created By:</strong> ${obs.created_by_name || 'N/A'} ${obs.created_by_company ? '(' + obs.created_by_company + ')' : ''}</p>
+                  </div>
+                  <div class="modal-section">
+                      <h3>Description</h3>
+                      <p>${obs.description || 'No description available'}</p>
+                  </div>
+                  <div class="modal-section">
+                      <h3>Chargeability Analysis</h3>
+                      <p><strong>Billable:</strong> ${obs.chargeability.is_chargeable ? 'Yes' : 'No'}</p>
+                      <p><strong>Confidence:</strong> ${obs.chargeability.confidence || 'N/A'}</p>
+                      <p><strong>Reason:</strong> ${obs.chargeability.reason || 'N/A'}</p>
+                      <p><strong>Category:</strong> ${obs.chargeability.category || 'N/A'}</p>
+                  </div>
+                  <div class="modal-section">
+                      <h3>Safety Information</h3>
+                      <p><strong>Safety Concern:</strong> ${obs.safety.is_safety_concern ? 'Yes' : 'No'}</p>
+                      <p><strong>Risk Level:</strong> <span class="safety-${obs.safety.risk_level.toLowerCase()}">${obs.safety.risk_level}</span></p>
+                      <p><strong>Concern Type:</strong> ${obs.safety.concern_type || 'N/A'}</p>
+                      <p><strong>Description:</strong> ${obs.safety.description || 'No safety concerns'}</p>
+                      <p><strong>Immediate Action Required:</strong> ${obs.safety.immediate_action_required ? 'Yes' : 'No'}</p>
+                  </div>
+                  <div class="modal-section">
+                      <h3>Recommendations</h3>
+                      <p><strong>Priority:</strong> ${obs.recommendations.priority || 'N/A'}</p>
+                      <p><strong>Estimated Time:</strong> ${obs.recommendations.estimated_time || 'N/A'}</p>
+                      <p><strong>Requires Approval:</strong> ${obs.recommendations.requires_approval ? 'Yes' : 'No'}</p>
+                      ${obs.recommendations.actions && obs.recommendations.actions.length > 0 ? `
+                          <p><strong>Actions:</strong></p>
+                          <ul>
+                              ${obs.recommendations.actions.map(action => `<li>${action}</li>`).join('')}
+                          </ul>
+                      ` : ''}
+                  </div>
+                  <div class="modal-section">
+                      <h3>Classification</h3>
+                      <p><strong>Type:</strong> ${obs.classification.primary_type || 'N/A'}</p>
+                      <p><strong>Tags:</strong> ${obs.classification.tags && obs.classification.tags.length > 0 ? obs.classification.tags.join(', ') : 'None'}</p>
+                      <p><strong>Requires Documentation:</strong> ${obs.classification.requires_documentation ? 'Yes' : 'No'}</p>
+                  </div>
+              `;
+
+              document.getElementById('observationModal').style.display = 'block';
+          } catch (error) {
+              console.error('Error loading observation:', error);
+              alert('Error loading observation details');
+          } finally {
+              hideLoading();
+          }
+      }
+
+      // Close modal
+      function closeModal() {
+          document.getElementById('observationModal').style.display = 'none';
+      }
+
+      // Click outside modal to close
+      window.onclick = function(event) {
+          const modal = document.getElementById('observationModal');
+          if (event.target === modal) {
+              closeModal();
+          }
+      }
+
+      // Loading overlay
+      function showLoading() {
+          document.getElementById('loadingOverlay').style.display = 'block';
+      }
+
+      function hideLoading() {
+          document.getElementById('loadingOverlay').style.display = 'none';
+      }
+
+      // Initialize on page load
+      document.addEventListener('DOMContentLoaded', initDashboard);
+    </script>
+  </body>
+</html>
