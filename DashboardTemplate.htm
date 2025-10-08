@@ -336,12 +336,16 @@
         gap: 12px;
         margin-bottom: 15px;
       }
-      /* .modal-info-item { */
-      /* background: #f8f9fa; */
-      /* padding: 12px 15px; */
-      /* border-radius: 8px; */
-      /* border-left: 3px solid #3498db; */
-      /* } */
+      .modal-info-item {
+        display: flex;
+        flex-direction: column;
+        gap: 5px;
+        margin-bottom: 10px;
+        /* background: #f8f9fa; */
+        /* padding: 12px 15px; */
+        /* border-radius: 8px; */
+        /* border-left: 3px solid #3498db; */
+      }
       .modal-info-label {
         font-size: 0.85rem;
         color: #7f8c8d;
@@ -901,23 +905,25 @@
                 <h3 style="margin: 0;">Basic Information</h3>
               </div>
               <div class="modal-description-box">
-                <div>
+                <div class="modal-info-item">
                   <div class="modal-info-label">Project</div>
                   <div class="modal-info-value">${obs.project_name ?? 'N/A'}</div>
                   ${obs.project_number ? `<div style="font-size: 0.85rem; color: #7f8c8d; margin-top: 3px;">#${obs.project_number}</div>` : ''}
                 </div>
-                <div>
+                <div class="modal-info-item">
                   <div class="modal-info-label">Location</div>
                   <div class="modal-info-value">${obs.location ?? 'N/A'}</div>
                 </div>
-                <div>
+                <div class="modal-info-item">
                   <div class="modal-info-label">Created Date</div>
                   <div class="modal-info-value">${obs.created_at ? new Date(obs.created_at).toLocaleDateString() : 'N/A'}</div>
                 </div>
-                <div>
+                <div class="modal-info-item">
                   <div class="modal-info-label">Created By</div>
-                  <div class="modal-info-value">${obs.created_by_name ?? 'N/A'}</div>
-                  ${obs.created_by_company ? `<div style="font-size: 0.85rem; color: #7f8c8d; margin-top: 3px;">${obs.created_by_company}</div>` : ''}
+                  <div class="modal-info-value">
+                    ${obs.created_by_name ?? 'N/A'}
+                    ${obs.created_by_company ? ` <span style="font-size: 0.85rem; color: #7f8c8d; margin-top: 3px;">${obs.created_by_company}</span>` : ''}
+                  </div>
                 </div>
               </div>
             </div>
