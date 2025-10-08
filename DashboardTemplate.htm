@@ -491,13 +491,16 @@
       </div>
     </div>
 
-    
     <script>
-      // --- Compute API base ---
-      // const API_BASE = (typeof dashboardData !== 'undefined' && dashboardData.api_base_url)
-      //   ? dashboardData.api_base_url.replace(/\/+$/, '')
-      //   : (location.origin + '/webhook');
+      // Injected by n8n — includes summary, byProject, observations, api_base_url, etc.
+      window.dashboardData = /*DASHBOARD_DATA*/;
+
+      // Same-origin API base so calls like /api/observations work directly
       const API_BASE = '/webhook';
+
+      // Track one-time initialization
+      let summaryInitialized = false;
+      let chartsInitialized  = false;
 
       // --- General state ---
       let currentPage = 1;
@@ -515,7 +518,7 @@
         console.log('[HTTP] GET', url);
         const res = await fetch(url, { method: 'GET', headers: {}, cache: 'no-cache' });
         if (!res.ok) {
-          const text = await res.text().catch(()=>''); 
+          const text = await res.text().catch(()=>'');
           throw new Error(`HTTP ${res.status}: ${text.slice(0,200)}`);
         }
         return res.json();
@@ -540,14 +543,22 @@
       // Initialize dashboard
       function initDashboard() {
         try {
-          updateSummaryCards();
-          initCharts();
+          if (!summaryInitialized && window.dashboardData) {
+            updateSummaryCards();
+            summaryInitialized = true;
+          }
+          if (!chartsInitialized && window.dashboardData) {
+            initCharts();
+            chartsInitialized = true;
+          }
         } catch (e) {
           console.warn('Charts/summary init failed (missing dashboardData?)', e);
         }
-        // Load first page from API so table stays in sync with server paging/filtering
+
+        // Load first page from API — this only updates the table
         loadPage(1);
       }
+
 
       // Update summary cards using injected dashboardData (if present)
       function updateSummaryCards() {
@@ -563,6 +574,10 @@
 
       // Initialize charts using injected dashboardData (if present)
       function initCharts() {
+        if (projectChart?.destroy) projectChart.destroy();
+        if (billableChart?.destroy) billableChart.destroy();
+        if (safetyChart?.destroy)  safetyChart.destroy();
+
         if (!window.dashboardData) return;
         const projects = dashboardData.byProject || [];
         if (projects.length && window.Chart) {
@@ -823,6 +838,5 @@
 
       document.addEventListener('DOMContentLoaded', initDashboard);
     </script>
-
   </body>
 </html>
