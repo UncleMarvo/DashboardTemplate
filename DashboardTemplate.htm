@@ -329,6 +329,99 @@
         line-height: 1.5;
       }
 
+      /* Enhanced Modal Data Styling */
+      .modal-info-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 12px;
+        margin-bottom: 15px;
+      }
+      .modal-info-item {
+        background: #f8f9fa;
+        padding: 12px 15px;
+        border-radius: 8px;
+        border-left: 3px solid #3498db;
+      }
+      .modal-info-label {
+        font-size: 0.85rem;
+        color: #7f8c8d;
+        text-transform: uppercase;
+        font-weight: 600;
+        margin-bottom: 5px;
+        letter-spacing: 0.5px;
+      }
+      .modal-info-value {
+        font-size: 1.1rem;
+        color: #2c3e50;
+        font-weight: 500;
+      }
+      .modal-highlight-box {
+        background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+        padding: 20px;
+        border-radius: 10px;
+        border: 2px solid #dee2e6;
+        margin-bottom: 20px;
+      }
+      .modal-highlight-box.billable-yes {
+        background: linear-gradient(135deg, #d4edda 0%, #c3e6cb 100%);
+        border-color: #28a745;
+      }
+      .modal-highlight-box.billable-no {
+        background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+        border-color: #dee2e6;
+      }
+      .modal-highlight-box.safety-high {
+        background: linear-gradient(135deg, #f8d7da 0%, #f5c6cb 100%);
+        border-color: #dc3545;
+      }
+      .modal-highlight-box.safety-medium {
+        background: linear-gradient(135deg, #fff3cd 0%, #ffeaa7 100%);
+        border-color: #ffc107;
+      }
+      .modal-highlight-box.safety-low {
+        background: linear-gradient(135deg, #fff9e6 0%, #fff3cd 100%);
+        border-color: #ffc107;
+      }
+      .modal-badge {
+        display: inline-block;
+        padding: 6px 14px;
+        border-radius: 20px;
+        font-size: 0.9rem;
+        font-weight: 600;
+        margin-top: 5px;
+      }
+      .modal-badge.status {
+        background: #3498db;
+        color: white;
+      }
+      .modal-badge.billable-yes {
+        background: #28a745;
+        color: white;
+      }
+      .modal-badge.billable-no {
+        background: #6c757d;
+        color: white;
+      }
+      .modal-description-box {
+        background: #f8f9fa;
+        padding: 20px;
+        border-radius: 8px;
+        border-left: 4px solid #3498db;
+        font-size: 1rem;
+        line-height: 1.7;
+        color: #495057;
+        margin-top: 10px;
+      }
+      .modal-section-header {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin-bottom: 15px;
+      }
+      .modal-section-icon {
+        font-size: 1.3rem;
+      }
+
       .loading-overlay {
         display: none;
         position: fixed;
@@ -796,25 +889,94 @@
           if (obs && obs.error) { alert('Observation not found'); return; }
           document.getElementById('modalTitle').textContent = obs.name ?? 'Observation Details';
           document.getElementById('modalBody').innerHTML = `
-            <div class="modal-section">
-              <h3>Basic Information</h3>
-              <p><strong>Project:</strong> ${obs.project_name ?? ''} ${obs.project_number ? '(' + obs.project_number + ')' : ''}</p>
-              <p><strong>Location:</strong> ${obs.location ?? 'N/A'}</p>
-              <p><strong>Status:</strong> ${obs.status ?? ''}</p>
-              <p><strong>Created:</strong> ${obs.created_at ? new Date(obs.created_at).toLocaleDateString() : 'N/A'}</p>
-              <p><strong>Created By:</strong> ${(obs.created_by_name ?? 'N/A')} ${obs.created_by_company ? '(' + obs.created_by_company + ')' : ''}</p>
+            <!-- Status Badge at Top -->
+            <div style="margin-bottom: 20px;">
+              <span class="modal-badge status">${obs.status ?? 'N/A'}</span>
             </div>
+
+            <!-- Basic Information Grid -->
             <div class="modal-section">
-              <h3>Description</h3>
-              <p>${obs.description ?? 'No description available'}</p>
+              <div class="modal-section-header">
+                <span class="modal-section-icon">📋</span>
+                <h3 style="margin: 0;">Basic Information</h3>
+              </div>
+              <div class="modal-info-grid">
+                <div class="modal-info-item">
+                  <div class="modal-info-label">Project</div>
+                  <div class="modal-info-value">${obs.project_name ?? 'N/A'}</div>
+                  ${obs.project_number ? `<div style="font-size: 0.85rem; color: #7f8c8d; margin-top: 3px;">#${obs.project_number}</div>` : ''}
+                </div>
+                <div class="modal-info-item">
+                  <div class="modal-info-label">Location</div>
+                  <div class="modal-info-value">${obs.location ?? 'N/A'}</div>
+                </div>
+                <div class="modal-info-item">
+                  <div class="modal-info-label">Created Date</div>
+                  <div class="modal-info-value">${obs.created_at ? new Date(obs.created_at).toLocaleDateString() : 'N/A'}</div>
+                </div>
+                <div class="modal-info-item">
+                  <div class="modal-info-label">Created By</div>
+                  <div class="modal-info-value">${obs.created_by_name ?? 'N/A'}</div>
+                  ${obs.created_by_company ? `<div style="font-size: 0.85rem; color: #7f8c8d; margin-top: 3px;">${obs.created_by_company}</div>` : ''}
+                </div>
+              </div>
             </div>
+
+            <!-- Description Section -->
             <div class="modal-section">
-              <h3>Chargeability</h3>
-              <p><strong>Billable:</strong> ${(obs.is_chargeable ? 'Yes' : 'No')}</p>
+              <div class="modal-section-header">
+                <span class="modal-section-icon">📝</span>
+                <h3 style="margin: 0;">Description</h3>
+              </div>
+              <div class="modal-description-box">
+                ${obs.description ?? 'No description available'}
+              </div>
             </div>
+
+            <!-- Chargeability Highlight Box -->
             <div class="modal-section">
-              <h3>Safety</h3>
-              <p><strong>Risk Level:</strong> <span class="safety-${(obs.safety_risk_level ?? 'none').toLowerCase()}">${obs.safety_risk_level ?? 'N/A'}</span></p>
+              <div class="modal-section-header">
+                <span class="modal-section-icon">💰</span>
+                <h3 style="margin: 0;">Chargeability</h3>
+              </div>
+              <div class="modal-highlight-box ${obs.is_chargeable ? 'billable-yes' : 'billable-no'}">
+                <div style="display: flex; align-items: center; justify-content: space-between;">
+                  <div>
+                    <div class="modal-info-label">Billable Status</div>
+                    <div style="font-size: 1.3rem; font-weight: 600; color: ${obs.is_chargeable ? '#28a745' : '#6c757d'}; margin-top: 5px;">
+                      ${obs.is_chargeable ? '✓ Billable' : '✗ Non-Billable'}
+                    </div>
+                  </div>
+                  <span class="modal-badge ${obs.is_chargeable ? 'billable-yes' : 'billable-no'}">
+                    ${obs.is_chargeable ? 'YES' : 'NO'}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Safety Highlight Box -->
+            <div class="modal-section">
+              <div class="modal-section-header">
+                <span class="modal-section-icon">⚠️</span>
+                <h3 style="margin: 0;">Safety Risk Assessment</h3>
+              </div>
+              <div class="modal-highlight-box safety-${(obs.safety_risk_level ?? 'none').toLowerCase()}">
+                <div style="display: flex; align-items: center; justify-content: space-between;">
+                  <div>
+                    <div class="modal-info-label">Risk Level</div>
+                    <div style="font-size: 1.3rem; font-weight: 600; margin-top: 5px;">
+                      <span class="safety-${(obs.safety_risk_level ?? 'none').toLowerCase()}">
+                        ${obs.safety_risk_level ?? 'N/A'}
+                      </span>
+                    </div>
+                  </div>
+                  ${obs.safety_risk_level && obs.safety_risk_level !== 'None' ? `
+                    <div style="font-size: 2rem;">
+                      ${obs.safety_risk_level === 'High' ? '🔴' : obs.safety_risk_level === 'Medium' ? '🟡' : '🟢'}
+                    </div>
+                  ` : ''}
+                </div>
+              </div>
             </div>
           `;
           document.getElementById('observationModal').style.display = 'block';
