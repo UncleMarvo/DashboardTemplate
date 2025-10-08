@@ -491,413 +491,330 @@
       </div>
     </div>
 
+    
     <script>
-      // CRITICAL: This placeholder will be replaced with actual data by n8n
-      const dashboardData = /*DASHBOARD_DATA*/;
+      // --- API base injected from n8n through dashboardData (no workflow changes needed) ---
+      const API_BASE = (typeof dashboardData !== 'undefined' && dashboardData.api_base_url) ? dashboardData.api_base_url : '';
 
-      // State management
+      // --- General state ---
       let currentPage = 1;
       const rowsPerPage = 25;
-      let filteredObservations = [];
       let currentFilter = 'all';
+      let currentSearch = '';
       let sortColumn = '';
       let sortDirection = 'asc';
       let projectChart, billableChart, safetyChart;
 
+      // ---- tiny fetch helper
+      async function httpGetJson(path, params = {}) {
+        const qs = new URLSearchParams(params);
+        const url = `${API_BASE}${path}${qs.toString() ? `?${qs}` : ''}`;
+        const res = await fetch(url, { method: 'GET', headers: {}, cache: 'no-cache' });
+        if (!res.ok) {
+          const text = await res.text().catch(()=>''); 
+          throw new Error(`HTTP ${res.status}: ${text.slice(0,200)}`);
+        }
+        return res.json();
+      }
+
+      // ---- API wrappers (keep existing API response shapes)
+      async function fetchObservations(page = 1) {
+        const params = { page, limit: rowsPerPage };
+        if (currentFilter && currentFilter !== 'all') params.filter = currentFilter;
+        if (currentSearch && currentSearch.length >= 3) params.search = currentSearch;
+        const out = await httpGetJson('/api/observations', params);
+        // API returns { data: [...] , nextPage?, total? }
+        return out;
+      }
+
+      async function fetchObservation(id) {
+        return httpGetJson(`/api/observation/${encodeURIComponent(id)}`);
+      }
+
       // Initialize dashboard
       function initDashboard() {
-          updateSummaryCards();
-          initCharts();
-          filteredObservations = [...dashboardData.observations];
-          renderTable();
+        updateSummaryCards();
+        initCharts();
+        // Load first page from API so table stays in sync with server paging/filtering
+        loadPage(1);
       }
 
-      // Update summary cards
+      // Update summary cards using injected dashboardData
       function updateSummaryCards() {
-          const summary = dashboardData.summary;
-          document.getElementById('totalObs').textContent = summary.total;
-          document.getElementById('billablePercent').textContent = summary.billablePercent + '%';
-          document.getElementById('billableCount').textContent = summary.billable + ' observations';
-          document.getElementById('safetyCount').textContent = summary.safety;
-          document.getElementById('openCount').textContent = summary.open;
+        const summary = dashboardData.summary;
+        document.getElementById('totalObs').textContent = summary.total;
+        document.getElementById('billablePercent').textContent = summary.billablePercent + '%';
+        document.getElementById('billableCount').textContent = summary.billable + ' observations';
+        document.getElementById('safetyCount').textContent = summary.safety;
+        document.getElementById('openCount').textContent = summary.open;
       }
 
-      // Initialize charts
+      // Initialize charts using injected dashboardData
       function initCharts() {
-          const projects = dashboardData.byProject;
+        const projects = dashboardData.byProject;
 
-          // Project volume bar chart
-          const ctx1 = document.getElementById('projectChart').getContext('2d');
-          projectChart = new Chart(ctx1, {
-              type: 'bar',
-              data: {
-                  labels: projects.map(p => p.name),
-                  datasets: [{
-                      label: 'Observations',
-                      data: projects.map(p => p.total),
-                      backgroundColor: '#3498db',
-                      borderColor: '#2980b9',
-                      borderWidth: 1
-                  }]
-              },
-              options: {
-                  responsive: true,
-                  maintainAspectRatio: false,
-                  onClick: (event, elements) => {
-                      if (elements.length > 0) {
-                          const index = elements[0].index;
-                          filterByProject(projects[index].name);
-                      }
-                  },
-                  scales: { y: { beginAtZero: true } }
+        const ctx1 = document.getElementById('projectChart').getContext('2d');
+        projectChart = new Chart(ctx1, {
+          type: 'bar',
+          data: {
+            labels: projects.map(p => p.name),
+            datasets: [{
+              label: 'Observations',
+              data: projects.map(p => p.total),
+              backgroundColor: '#3498db',
+              borderColor: '#2980b9',
+              borderWidth: 1
+            }]
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            onClick: (event, elements) => {
+              if (elements.length > 0) {
+                const index = elements[0].index;
+                filterByProject(projects[index].name);
               }
-          });
+            },
+            scales: { y: { beginAtZero: true } }
+          }
+        });
 
-          // Billable pie chart
-          const ctx2 = document.getElementById('billableChart').getContext('2d');
-          const billableCount = dashboardData.summary.billable;
-          const nonBillableCount = dashboardData.summary.total - billableCount;
-          billableChart = new Chart(ctx2, {
-              type: 'pie',
-              data: {
-                  labels: ['Billable', 'Non-Billable'],
-                  datasets: [{
-                      data: [billableCount, nonBillableCount],
-                      backgroundColor: ['#27ae60', '#95a5a6'],
-                      borderWidth: 2
-                  }]
-              },
-              options: {
-                  responsive: true,
-                  maintainAspectRatio: false,
-                  onClick: (event, elements) => {
-                      if (elements.length > 0) {
-                          setFilter(elements[0].index === 0 ? 'billable' : 'all');
-                      }
-                  }
+        const ctx2 = document.getElementById('billableChart').getContext('2d');
+        const billableCount = dashboardData.summary.billable;
+        const nonBillableCount = dashboardData.summary.total - billableCount;
+        billableChart = new Chart(ctx2, {
+          type: 'pie',
+          data: {
+            labels: ['Billable', 'Non-Billable'],
+            datasets: [{
+              data: [billableCount, nonBillableCount],
+              backgroundColor: ['#27ae60', '#95a5a6'],
+              borderWidth: 2
+            }]
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            onClick: (event, elements) => {
+              if (elements.length > 0) {
+                setFilter(elements[0].index === 0 ? 'billable' : 'all');
               }
-          });
+            }
+          }
+        });
 
-          // Safety donut chart
-          const ctx3 = document.getElementById('safetyChart').getContext('2d');
-          const safetyLevels = { None: 0, Low: 0, Medium: 0, High: 0 };
-          dashboardData.observations.forEach(obs => {
-              safetyLevels[obs.safety_risk_level || 'None']++;
-          });
-          safetyChart = new Chart(ctx3, {
-              type: 'doughnut',
-              data: {
-                  labels: Object.keys(safetyLevels),
-                  datasets: [{
-                      data: Object.values(safetyLevels),
-                      backgroundColor: ['#95a5a6', '#f1c40f', '#f39c12', '#e74c3c'],
-                      borderWidth: 2
-                  }]
-              },
-              options: {
-                  responsive: true,
-                  maintainAspectRatio: false,
-                  onClick: (event, elements) => {
-                      if (elements.length > 0 && elements[0].index > 0) {
-                          setFilter('safety');
-                      }
-                  }
+        const ctx3 = document.getElementById('safetyChart').getContext('2d');
+        const safetyLevels = { None: 0, Low: 0, Medium: 0, High: 0 };
+        dashboardData.observations.forEach(obs => {
+          const level = (obs.safety_risk_level || 'None');
+          safetyLevels[level] = (safetyLevels[level] ?? 0) + 1;
+        });
+        safetyChart = new Chart(ctx3, {
+          type: 'doughnut',
+          data: {
+            labels: Object.keys(safetyLevels),
+            datasets: [{
+              data: Object.values(safetyLevels),
+              backgroundColor: ['#95a5a6', '#f1c40f', '#f39c12', '#e74c3c'],
+              borderWidth: 2
+            }]
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            onClick: (event, elements) => {
+              if (elements.length > 0 && elements[0].index > 0) {
+                setFilter('safety');
               }
-          });
+            }
+          }
+        });
       }
 
-      // Render table
-      function renderTable() {
-          const tbody = document.getElementById('tableBody');
-          const startIndex = (currentPage - 1) * rowsPerPage;
-          const endIndex = startIndex + rowsPerPage;
-          const pageData = filteredObservations.slice(startIndex, endIndex);
-
-          tbody.innerHTML = pageData.map(obs => `
-              <tr onclick="openModal(${obs.id})">
-                  <td>${obs.project_name}</td>
-                  <td>${obs.name}</td>
-                  <td><span class="status-badge status-${obs.status.toLowerCase()}">${obs.status}</span></td>
-                  <td class="${obs.is_chargeable ? 'billable-yes' : 'billable-no'}">${obs.is_chargeable ? 'Yes' : 'No'}</td>
-                  <td class="safety-${obs.safety_risk_level.toLowerCase()}">${obs.safety_risk_level}</td>
-                  <td>${obs.recommendation_priority || 'N/A'}</td>
-                  <td><button onclick="event.stopPropagation(); openModal(${obs.id})" style="padding: 5px 12px; border: none; background: #3498db; color: white; border-radius: 4px; cursor: pointer; font-size: 12px;">View</button></td>
-              </tr>
-          `).join('');
-
-          updatePagination();
+      // Centralized render for table
+      function renderTable(items) {
+        const tbody = document.getElementById('tableBody');
+        const rows = (items || []).map(obs => {
+          const safety = (obs.safety_risk_level || 'none').toLowerCase();
+          const status = (obs.status || '').toLowerCase();
+          return `
+            <tr onclick="openModal(${obs.id})">
+              <td>${obs.project_name ?? ''}</td>
+              <td>${obs.name ?? ''}</td>
+              <td><span class="status-badge status-${status}">${obs.status ?? ''}</span></td>
+              <td class="${obs.is_chargeable ? 'billable-yes' : 'billable-no'}">${obs.is_chargeable ? 'Yes' : 'No'}</td>
+              <td class="safety-${safety}">${obs.safety_risk_level ?? ''}</td>
+              <td>${obs.recommendation_priority || 'N/A'}</td>
+              <td><button onclick="event.stopPropagation(); openModal(${obs.id})" style="padding: 5px 12px; border: none; background: #3498db; color: white; border-radius: 4px; cursor: pointer; font-size: 12px;">View</button></td>
+            </tr>
+          `;
+        }).join('');
+        tbody.innerHTML = rows;
       }
 
-      // Update pagination
-      function updatePagination() {
-          const totalPages = Math.ceil(filteredObservations.length / rowsPerPage);
-          document.getElementById('pageInfo').textContent = `Page ${currentPage} of ${totalPages} (${filteredObservations.length} observations)`;
-          document.getElementById('prevBtn').disabled = currentPage === 1;
-          document.getElementById('nextBtn').disabled = currentPage === totalPages;
+      // Update pagination info
+      function updatePagination(totalCount, page) {
+        const totalPages = totalCount ? Math.max(1, Math.ceil(totalCount / rowsPerPage)) : (page || 1);
+        document.getElementById('pageInfo').textContent = `Page ${page} of ${totalPages}${totalCount ? ` (${totalCount} observations)` : ''}`;
+        document.getElementById('prevBtn').disabled = page <= 1;
+        // If server doesn't return total, keep Next enabled unless empty page
+        document.getElementById('nextBtn').disabled = false;
       }
 
-      // Change page
+      // Load a page via API
+      async function loadPage(page) {
+        showLoading();
+        try {
+          const { data, total, nextPage } = await fetchObservations(page);
+          renderTable(data || []);
+          currentPage = page;
+          updatePagination(total, page);
+          // Disable Next if API signals no more pages
+          if (Array.isArray(data) && data.length < rowsPerPage && !nextPage && !total) {
+            document.getElementById('nextBtn').disabled = true;
+          }
+        } catch (err) {
+          console.error('Load page error:', err);
+          alert('Error loading data.');
+        } finally {
+          hideLoading();
+        }
+      }
+
+      // Pagination button handlers
       function changePage(direction) {
-          const totalPages = Math.ceil(filteredObservations.length / rowsPerPage);
-          const newPage = currentPage + direction;
-
-          if (newPage >= 1 && newPage <= totalPages) {
-              if (newPage > 2) {
-                  loadPageFromAPI(newPage);
-              } else {
-                  currentPage = newPage;
-                  renderTable();
-              }
-          }
+        const next = Math.max(1, currentPage + direction);
+        loadPage(next);
       }
 
-      // Load page from API
-      async function loadPageFromAPI(page) {
-          showLoading();
-          try {
-              const response = await fetch(`${dashboardData.api_base_url}/api/observations?page=${page}&limit=${rowsPerPage}&filter=${currentFilter}`);
-              const data = await response.json();
-
-              filteredObservations = data.data;
-              currentPage = page;
-              renderTable();
-          } catch (error) {
-              console.error('Error loading page:', error);
-              alert('Error loading data. Please try again.');
-          } finally {
-              hideLoading();
-          }
-      }
-
-      // Filter table
-      function filterTable(type) {
-          setFilter(type);
-      }
-
-      // Set filter
+      // Filters
       function setFilter(filter) {
-          currentFilter = filter;
-          currentPage = 1;
-
-          document.querySelectorAll('.filter-btn').forEach(btn => btn.classList.remove('active'));
-          event.target.classList.add('active');
-
-          if (filter === 'all') {
-              filteredObservations = [...dashboardData.observations];
-              renderTable();
-          } else {
-              loadFilteredData();
-          }
+        currentFilter = filter;
+        currentPage = 1;
+        // Toggle active button styling without relying on event.target
+        const btns = document.querySelectorAll('.filter-btn');
+        btns.forEach(btn => {
+          const text = btn.textContent.trim().toLowerCase();
+          const map = { all: 'all', billable: 'billable', 'safety issues': 'safety', open: 'open', 'high priority': 'priority' };
+          const btnFilter = map[text] || 'all';
+          if (btnFilter === filter) btn.classList.add('active'); else btn.classList.remove('active');
+        });
+        loadPage(1);
       }
+      function filterTable(type){ setFilter(type); }
 
-      // Load filtered data from API
-      async function loadFilteredData() {
-          showLoading();
-          try {
-              const response = await fetch(`${dashboardData.api_base_url}/api/observations?filter=${currentFilter}&page=1&limit=${rowsPerPage}`);
-              const data = await response.json();
-
-              filteredObservations = data.data;
-              currentPage = 1;
-              renderTable();
-          } catch (error) {
-              console.error('Error filtering:', error);
-              filteredObservations = dashboardData.observations.filter(obs => {
-                  if (currentFilter === 'billable') return obs.is_chargeable;
-                  if (currentFilter === 'safety') return obs.is_safety_concern;
-                  if (currentFilter === 'open') return obs.status === 'open' || obs.status === 'initiated';
-                  if (currentFilter === 'priority') return obs.recommendation_priority === 'High';
-                  return true;
-              });
-              renderTable();
-          } finally {
-              hideLoading();
-          }
-      }
-
-      // Filter by project
       async function filterByProject(projectName) {
-          currentFilter = 'project';
-          currentPage = 1;
-          showLoading();
-
-          try {
-              const response = await fetch(`${dashboardData.api_base_url}/api/observations?project=${encodeURIComponent(projectName)}&page=1&limit=${rowsPerPage}`);
-              const data = await response.json();
-
-              filteredObservations = data.data;
-              renderTable();
-          } catch (error) {
-              console.error('Error filtering by project:', error);
-              filteredObservations = dashboardData.observations.filter(obs => obs.project_name === projectName);
-              renderTable();
-          } finally {
-              hideLoading();
-          }
+        currentFilter = 'project';
+        currentPage = 1;
+        showLoading();
+        try {
+          const { data } = await httpGetJson('/api/observations', { project: projectName, page: 1, limit: rowsPerPage });
+          renderTable(data || []);
+          updatePagination((data || []).length, 1);
+        } catch (e) {
+          console.error('filterByProject error', e);
+          renderTable((dashboardData.observations || []).filter(o => o.project_name === projectName));
+          updatePagination(null, 1);
+        } finally { hideLoading(); }
       }
 
-      // Search table
+      // Search
       async function searchTable() {
-          const searchTerm = event.target.value.toLowerCase();
-
-          if (searchTerm.length === 0) {
-              filteredObservations = [...dashboardData.observations];
-              currentPage = 1;
-              renderTable();
-              return;
-          }
-
-          if (searchTerm.length < 3) return;
-
-          showLoading();
-          try {
-              const response = await fetch(`${dashboardData.api_base_url}/api/observations?search=${encodeURIComponent(searchTerm)}&page=1&limit=${rowsPerPage}`);
-              const data = await response.json();
-
-              filteredObservations = data.data;
-              currentPage = 1;
-              renderTable();
-          } catch (error) {
-              console.error('Error searching:', error);
-              filteredObservations = dashboardData.observations.filter(obs =>
-                  obs.name.toLowerCase().includes(searchTerm) ||
-                  obs.project_name.toLowerCase().includes(searchTerm) ||
-                  obs.status.toLowerCase().includes(searchTerm)
-              );
-              currentPage = 1;
-              renderTable();
-          } finally {
-              hideLoading();
-          }
+        const input = document.querySelector('.search-box');
+        currentSearch = (input?.value || '').toLowerCase();
+        if (!currentSearch) { setFilter(currentFilter); return; }
+        if (currentSearch.length < 3) return; // debounce small terms
+        loadPage(1);
       }
 
-      // Sort table
+      // Sorting (client-side visual only; server paging stays canonical)
       function sortTable(column) {
-          if (sortColumn === column) {
-              sortDirection = sortDirection === 'asc' ? 'desc' : 'asc';
-          } else {
-              sortColumn = column;
-              sortDirection = 'asc';
-          }
-
-          filteredObservations.sort((a, b) => {
-              let aVal = a[column];
-              let bVal = b[column];
-
-              if (typeof aVal === 'boolean') {
-                  aVal = aVal ? 1 : 0;
-                  bVal = bVal ? 1 : 0;
-              }
-              if (typeof aVal === 'string') {
-                  aVal = aVal.toLowerCase();
-                  bVal = bVal.toLowerCase();
-              }
-
-              if (sortDirection === 'asc') {
-                  return aVal > bVal ? 1 : -1;
-              } else {
-                  return aVal < bVal ? 1 : -1;
-              }
+        if (sortColumn === column) sortDirection = (sortDirection === 'asc' ? 'desc' : 'asc');
+        else { sortColumn = column; sortDirection = 'asc'; }
+        // Re-fetch current page and sort client-side for display
+        fetchObservations(currentPage).then(({ data }) => {
+          const items = (data || []).slice();
+          items.sort((a,b) => {
+            let av = a[column], bv = b[column];
+            if (typeof av === 'boolean') { av = av ? 1 : 0; bv = bv ? 1 : 0; }
+            if (typeof av === 'string') { av = av.toLowerCase(); bv = bv.toLowerCase(); }
+            return (sortDirection === 'asc') ? (av > bv ? 1 : -1) : (av < bv ? 1 : -1);
           });
-
-          renderTable();
+          renderTable(items);
+        }).catch(()=>{});
       }
 
-      // Open modal
+      // Modal
       async function openModal(obsId) {
-          showLoading();
-
-          try {
-              const response = await fetch(`${dashboardData.api_base_url}/api/observation/${obsId}`);
-              const obs = await response.json();
-
-              if (obs.error) {
-                  alert('Observation not found');
-                  return;
-              }
-
-              document.getElementById('modalTitle').textContent = obs.name;
-              document.getElementById('modalBody').innerHTML = `
-                  <div class="modal-section">
-                      <h3>Basic Information</h3>
-                      <p><strong>Project:</strong> ${obs.project_name} (${obs.project_number || 'N/A'})</p>
-                      <p><strong>Location:</strong> ${obs.location || 'N/A'}</p>
-                      <p><strong>Status:</strong> ${obs.status}</p>
-                      <p><strong>Created:</strong> ${new Date(obs.created_at).toLocaleDateString()}</p>
-                      <p><strong>Created By:</strong> ${obs.created_by_name || 'N/A'} ${obs.created_by_company ? '(' + obs.created_by_company + ')' : ''}</p>
-                  </div>
-                  <div class="modal-section">
-                      <h3>Description</h3>
-                      <p>${obs.description || 'No description available'}</p>
-                  </div>
-                  <div class="modal-section">
-                      <h3>Chargeability Analysis</h3>
-                      <p><strong>Billable:</strong> ${obs.chargeability.is_chargeable ? 'Yes' : 'No'}</p>
-                      <p><strong>Confidence:</strong> ${obs.chargeability.confidence || 'N/A'}</p>
-                      <p><strong>Reason:</strong> ${obs.chargeability.reason || 'N/A'}</p>
-                      <p><strong>Category:</strong> ${obs.chargeability.category || 'N/A'}</p>
-                  </div>
-                  <div class="modal-section">
-                      <h3>Safety Information</h3>
-                      <p><strong>Safety Concern:</strong> ${obs.safety.is_safety_concern ? 'Yes' : 'No'}</p>
-                      <p><strong>Risk Level:</strong> <span class="safety-${obs.safety.risk_level.toLowerCase()}">${obs.safety.risk_level}</span></p>
-                      <p><strong>Concern Type:</strong> ${obs.safety.concern_type || 'N/A'}</p>
-                      <p><strong>Description:</strong> ${obs.safety.description || 'No safety concerns'}</p>
-                      <p><strong>Immediate Action Required:</strong> ${obs.safety.immediate_action_required ? 'Yes' : 'No'}</p>
-                  </div>
-                  <div class="modal-section">
-                      <h3>Recommendations</h3>
-                      <p><strong>Priority:</strong> ${obs.recommendations.priority || 'N/A'}</p>
-                      <p><strong>Estimated Time:</strong> ${obs.recommendations.estimated_time || 'N/A'}</p>
-                      <p><strong>Requires Approval:</strong> ${obs.recommendations.requires_approval ? 'Yes' : 'No'}</p>
-                      ${obs.recommendations.actions && obs.recommendations.actions.length > 0 ? `
-                          <p><strong>Actions:</strong></p>
-                          <ul>
-                              ${obs.recommendations.actions.map(action => `<li>${action}</li>`).join('')}
-                          </ul>
-                      ` : ''}
-                  </div>
-                  <div class="modal-section">
-                      <h3>Classification</h3>
-                      <p><strong>Type:</strong> ${obs.classification.primary_type || 'N/A'}</p>
-                      <p><strong>Tags:</strong> ${obs.classification.tags && obs.classification.tags.length > 0 ? obs.classification.tags.join(', ') : 'None'}</p>
-                      <p><strong>Requires Documentation:</strong> ${obs.classification.requires_documentation ? 'Yes' : 'No'}</p>
-                  </div>
-              `;
-
-              document.getElementById('observationModal').style.display = 'block';
-          } catch (error) {
-              console.error('Error loading observation:', error);
-              alert('Error loading observation details');
-          } finally {
-              hideLoading();
-          }
+        showLoading();
+        try {
+          const obs = await fetchObservation(obsId);
+          if (obs && obs.error) { alert('Observation not found'); return; }
+          document.getElementById('modalTitle').textContent = obs.name ?? 'Observation Details';
+          document.getElementById('modalBody').innerHTML = `
+            <div class="modal-section">
+              <h3>Basic Information</h3>
+              <p><strong>Project:</strong> ${obs.project_name ?? ''} ${obs.project_number ? '(' + obs.project_number + ')' : ''}</p>
+              <p><strong>Location:</strong> ${obs.location ?? 'N/A'}</p>
+              <p><strong>Status:</strong> ${obs.status ?? ''}</p>
+              <p><strong>Created:</strong> ${obs.created_at ? new Date(obs.created_at).toLocaleDateString() : 'N/A'}</p>
+              <p><strong>Created By:</strong> ${(obs.created_by_name ?? 'N/A')} ${obs.created_by_company ? '(' + obs.created_by_company + ')' : ''}</p>
+            </div>
+            <div class="modal-section">
+              <h3>Description</h3>
+              <p>${obs.description ?? 'No description available'}</p>
+            </div>
+            <div class="modal-section">
+              <h3>Chargeability Analysis</h3>
+              <p><strong>Billable:</strong> ${(obs.chargeability?.is_chargeable ? 'Yes' : 'No')}</p>
+              <p><strong>Confidence:</strong> ${obs.chargeability?.confidence ?? 'N/A'}</p>
+              <p><strong>Reason:</strong> ${obs.chargeability?.reason ?? 'N/A'}</p>
+              <p><strong>Category:</strong> ${obs.chargeability?.category ?? 'N/A'}</p>
+            </div>
+            <div class="modal-section">
+              <h3>Safety Information</h3>
+              <p><strong>Safety Concern:</strong> ${(obs.safety?.is_safety_concern ? 'Yes' : 'No')}</p>
+              <p><strong>Risk Level:</strong> <span class="safety-${(obs.safety?.risk_level ?? 'none').toLowerCase()}">${obs.safety?.risk_level ?? 'N/A'}</span></p>
+              <p><strong>Concern Type:</strong> ${obs.safety?.concern_type ?? 'N/A'}</p>
+              <p><strong>Description:</strong> ${obs.safety?.description ?? 'No safety concerns'}</p>
+              <p><strong>Immediate Action Required:</strong> ${(obs.safety?.immediate_action_required ? 'Yes' : 'No')}</p>
+            </div>
+            <div class="modal-section">
+              <h3>Recommendations</h3>
+              <p><strong>Priority:</strong> ${obs.recommendations?.priority ?? 'N/A'}</p>
+              <p><strong>Estimated Time:</strong> ${obs.recommendations?.estimated_time ?? 'N/A'}</p>
+              <p><strong>Requires Approval:</strong> ${(obs.recommendations?.requires_approval ? 'Yes' : 'No')}</p>
+              ${Array.isArray(obs.recommendations?.actions) && obs.recommendations.actions.length ? `
+                <p><strong>Actions:</strong></p>
+                <ul>${obs.recommendations.actions.map(a => `<li>${a}</li>`).join('')}</ul>` : ''}
+            </div>
+            <div class="modal-section">
+              <h3>Classification</h3>
+              <p><strong>Type:</strong> ${obs.classification?.primary_type ?? 'N/A'}</p>
+              <p><strong>Tags:</strong> ${Array.isArray(obs.classification?.tags) && obs.classification.tags.length ? obs.classification.tags.join(', ') : 'None'}</p>
+              <p><strong>Requires Documentation:</strong> ${(obs.classification?.requires_documentation ? 'Yes' : 'No')}</p>
+            </div>
+          `;
+          document.getElementById('observationModal').style.display = 'block';
+        } catch (error) {
+          console.error('Error loading observation:', error);
+          alert('Error loading observation details');
+        } finally {
+          hideLoading();
+        }
       }
 
-      // Close modal
-      function closeModal() {
-          document.getElementById('observationModal').style.display = 'none';
-      }
+      function closeModal() { document.getElementById('observationModal').style.display = 'none'; }
+      window.onclick = function(ev) {
+        const modal = document.getElementById('observationModal');
+        if (ev.target === modal) closeModal();
+      };
 
-      // Click outside modal to close
-      window.onclick = function(event) {
-          const modal = document.getElementById('observationModal');
-          if (event.target === modal) {
-              closeModal();
-          }
-      }
+      function showLoading(){ document.getElementById('loadingOverlay').style.display = 'block'; }
+      function hideLoading(){ document.getElementById('loadingOverlay').style.display = 'none'; }
 
-      // Loading overlay
-      function showLoading() {
-          document.getElementById('loadingOverlay').style.display = 'block';
-      }
-
-      function hideLoading() {
-          document.getElementById('loadingOverlay').style.display = 'none';
-      }
-
-      // Initialize on page load
       document.addEventListener('DOMContentLoaded', initDashboard);
     </script>
+
   </body>
 </html>
